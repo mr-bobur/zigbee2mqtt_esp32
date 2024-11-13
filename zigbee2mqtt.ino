@@ -27,11 +27,86 @@
 #include "ArduinoJson.h"
 #include <cJSON.h>
 
-#include "app_mqtt.h"
+// #include "app_mqtt.h"
 #include "zbhci.h"
 #include "app_db.h"
 #include "device.h"
-#include "web.h"
+// #include "web.h"
+
+// #include <WiFiClientSecure.h>
+#include <Arduino_MQTT_Client.h>
+#include <ThingsBoard.h>
+#include <Server_Side_RPC.h>
+
+constexpr char THINGSBOARD_SERVER[] = "thingsboard.k-tech.uz";
+constexpr char WIFI_SSID[] = "Tenda";
+constexpr char WIFI_PASSWORD[] = "lockbaby";
+constexpr char TOKEN[] = "b5XVAHL4N705VHYZoIok";
+constexpr uint16_t THINGSBOARD_PORT = 1883;
+constexpr uint16_t MAX_MESSAGE_SIZE = 1024;
+
+constexpr const char RPC_SWITCH_METHOD[] = "example_set_switch";
+constexpr const char RPC_SWITCH_KEY[] = "switch";
+constexpr uint8_t MAX_RPC_SUBSCRIPTIONS = 1U;
+constexpr uint8_t MAX_RPC_RESPONSE = 5U;
+
+Server_Side_RPC<MAX_RPC_SUBSCRIPTIONS, MAX_RPC_RESPONSE> rpc;
+const std::array<IAPI_Implementation *, 1U> apis = {&rpc};
+
+WiFiClient espClient;
+Arduino_MQTT_Client mqttClient(espClient);
+ThingsBoard tb(mqttClient, MAX_MESSAGE_SIZE, Default_Max_Stack_Size, apis);
+
+bool subscribed = false;
+void InitWiFi()
+{
+    Serial.println("Connecting to AP ...");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("Connected to AP");
+}
+
+bool reconnect()
+{
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        return true;
+    }
+    InitWiFi();
+    return true;
+}
+
+ts_DstAddr sDstAddr;
+void processSwitchChange(const JsonVariantConst &data, JsonDocument &response)
+{
+    Serial.println("Received the set switch method");
+    const bool switch_state = data;
+    //   serializeJsonPretty(data, Serial);
+    //   Serial.print("Example switch state: ");
+    //   Serial.println(switch_state);
+
+    // Relayni holatini o'zgartiramiz
+
+    sDstAddr.u16DstAddr = 8831;
+    if (switch_state)
+    {
+        digitalWrite(3, LOW); // Relayni yoqish
+        Serial.println("Relay ON");
+        zbhci_ZclOnoffOn(0x02, sDstAddr, 1, 1);
+    }
+    else
+    {
+        digitalWrite(3, HIGH); // Relayni o'chirish
+        Serial.println("Relay OFF");
+        zbhci_ZclOnoffOff(0x02, sDstAddr, 1, 1);
+    }
+
+    response.set(switch_state); // Yuborilgan holatni qayta jo'natamiz
+}
 
 #define CONFIG_USR_BUTTON_PIN 2
 #define CONFIG_BLUE_LIGHT_PIN 3
@@ -149,29 +224,69 @@ void setup()
     zbhci_NodesJoinedGetReq(0);
     btn.attachClick(handleClick);
     btn.attachDoubleClick(handleDoubleClick);
+
+    // connecting thingsboard with fiwi and mqtt
+    // Connect to ThingsBoard
+    InitWiFi();
+    tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT);
+    // xTaskCreatePinnedToCore(
+    //     tbTask,
+    //     "tbTask",
+    //     4096,
+    //     NULL,
+    //     5,
+    //     NULL,
+    //     ARDUINO_RUNNING_CORE);
 }
-ts_DstAddr sDstAddr;
-int adres1=0;
+int adres1 = 0;
 void loop()
 {
     btn.tick();
     delay(10);
 
-    sDstAddr.u16DstAddr = 8831;
-    zbhci_ZclOnoffOn(0x02, sDstAddr, 1, 1); 
-    // for (int i  = 0; i < 65535; i+=100)
-    // {
-    //    zbhci_ZclColorMove2Color(0x02, sDstAddr, 1, 1,0,i,100    );
-    //    delay(100);
-    // } 
-    delay(1500);
-    zbhci_ZclOnoffOff(0x02, sDstAddr, 1, 1);
-    delay(1500);
- 
-    
+    if (!reconnect())
+    {
+        return;
+    }
 
+    if (!tb.connected())
+    {
+        Serial.printf("Connecting to: (%s) with token (%s)\n", THINGSBOARD_SERVER, TOKEN);
+        if (!tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT))
+        {
+            Serial.println("Failed to connect");
+            return;
+        }
+    }
+
+    if (!subscribed)
+    {
+        Serial.println("Subscribing for RPC...");
+        const std::array<RPC_Callback, MAX_RPC_SUBSCRIPTIONS> callbacks = {
+            RPC_Callback{RPC_SWITCH_METHOD, processSwitchChange}};
+
+        if (!rpc.RPC_Subscribe(callbacks.cbegin(), callbacks.cend()))
+        {
+            Serial.println("Failed to subscribe for RPC");
+            return;
+        }
+
+        Serial.println("Subscribe done");
+        subscribed = true;
+    }
+
+    tb.loop();
+
+    // sDstAddr.u16DstAddr = 45138;
+    // zbhci_ZclOnoffToggle(0x02, sDstAddr, 1, 1);
+
+    // delay(2000);
+    // zbhci_ZclOnoffOff(0x02, sDstAddr, 1, 1);
+    // delay(5000);
 }
-
+void tbTask(void *pvParameters)
+{
+}
 void zbhciTask(void *pvParameters)
 {
     ts_HciMsg sHciMsg;
@@ -290,7 +405,7 @@ void appHandleDeviceAnnouncementIndication(ts_MsgNodesDevAnnceRspPayload *payloa
             Serial.print("device topildi ardresi:");
             Serial.println(payload->u16NwkAddr);
             saved = false;
-            adres1=payload->u16NwkAddr;
+            adres1 = payload->u16NwkAddr;
             break;
         }
     }
@@ -415,190 +530,190 @@ void appHandleZCLreportMsgRcv(ts_MsgZclReportMsgRcvPayload *payload)
     }
     break;
 
-    // case 0x405: /* Relative Humidity Measurement Cluster */
-    // {
+        // case 0x405: /* Relative Humidity Measurement Cluster */
+        // {
 
-    //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-    //     {
-    //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-    //         {
-    //             device->deviceData.wsdcgq11lm.i16Humidity = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
-    //             if (!strncmp((const char *)device->au8ModelId,
-    //                          "lumi.weather",
-    //                          strlen("lumi.weather")))
-    //             {
-    //                 wsdcgq11lmReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.wsdcgq11lm.i16Temperature,
-    //                     device->deviceData.wsdcgq11lm.i16Humidity,
-    //                     device->deviceData.wsdcgq11lm.i16Pressure);
-    //             }
-    //             else if (!strncmp((const char *)device->au8ModelId,
-    //                               "LILYGO.Sensor",
-    //                               strlen("LILYGO.Sensor")))
-    //             {
-    //                 lilygoSensorReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.sensor.i16Temperature,
-    //                     device->deviceData.sensor.i16Humidity);
-    //             }
-    //         }
-    //     }
-    // }
-    // break;
+        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
+        //     {
+        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
+        //         {
+        //             device->deviceData.wsdcgq11lm.i16Humidity = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
+        //             if (!strncmp((const char *)device->au8ModelId,
+        //                          "lumi.weather",
+        //                          strlen("lumi.weather")))
+        //             {
+        //                 wsdcgq11lmReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.wsdcgq11lm.i16Temperature,
+        //                     device->deviceData.wsdcgq11lm.i16Humidity,
+        //                     device->deviceData.wsdcgq11lm.i16Pressure);
+        //             }
+        //             else if (!strncmp((const char *)device->au8ModelId,
+        //                               "LILYGO.Sensor",
+        //                               strlen("LILYGO.Sensor")))
+        //             {
+        //                 lilygoSensorReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.sensor.i16Temperature,
+        //                     device->deviceData.sensor.i16Humidity);
+        //             }
+        //         }
+        //     }
+        // }
+        // break;
 
-    // case 0: /* Basic Cluster */
-    //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-    //     {
-    //         if (payload->asAttrList[i].u16AttrID == 0x0005)
-    //         {
-    //             memcpy(
-    //                 device->au8ModelId,
-    //                 payload->asAttrList[i].uAttrData.au8AttrData,
-    //                 payload->asAttrList[i].u16DataLen);
-    //             if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-    //                          "lumi.sensor_motion.aq2",
-    //                          strlen("lumi.sensor_motion.aq2")))
-    //             {
-    //                 appDataBaseSave();
-    //                 rtcgq11lmAdd(device->u64IeeeAddr);
-    //             }
-    //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-    //                               "lumi.weather",
-    //                               strlen("lumi.weather")))
-    //             {
-    //                 appDataBaseSave();
-    //                 wsdcgq11lmAdd(device->u64IeeeAddr);
-    //             }
-    //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-    //                               "LILYGO.Light",
-    //                               strlen("LILYGO.Light")))
-    //             {
-    //                 appDataBaseSave();
-    //                 lilygoLightAdd(device->u64IeeeAddr);
-    //             }
-    //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-    //                               "LILYGO.Sensor",
-    //                               strlen("LILYGO.Sensor")))
-    //             {
-    //                 appDataBaseSave();
-    //                 lilygoSensorAdd(device->u64IeeeAddr);
-    //             }
-    //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-    //                               "ESP32C6.Light",
-    //                               strlen("ESP32C6.Light")))
-    //             {
-    //                 appDataBaseSave();
-    //                 espressifLightAdd(device->u64IeeeAddr);
-    //                 // The configure method below is needed to make the device reports on/off state changes
-    //                 // when the device is controlled manually through the button on it.
-    //                 zbhci_BindingReq(
-    //                     device->u64IeeeAddr,
-    //                     1,
-    //                     0x0006,
-    //                     0x03,
-    //                     (ts_DstAddr){
-    //                         .u64DstAddr = brigeNode.macAddr},
-    //                     1);
-    //             }
-    //         }
-    //     }
-    //     break;
+        // case 0: /* Basic Cluster */
+        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
+        //     {
+        //         if (payload->asAttrList[i].u16AttrID == 0x0005)
+        //         {
+        //             memcpy(
+        //                 device->au8ModelId,
+        //                 payload->asAttrList[i].uAttrData.au8AttrData,
+        //                 payload->asAttrList[i].u16DataLen);
+        //             if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
+        //                          "lumi.sensor_motion.aq2",
+        //                          strlen("lumi.sensor_motion.aq2")))
+        //             {
+        //                 appDataBaseSave();
+        //                 rtcgq11lmAdd(device->u64IeeeAddr);
+        //             }
+        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
+        //                               "lumi.weather",
+        //                               strlen("lumi.weather")))
+        //             {
+        //                 appDataBaseSave();
+        //                 wsdcgq11lmAdd(device->u64IeeeAddr);
+        //             }
+        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
+        //                               "LILYGO.Light",
+        //                               strlen("LILYGO.Light")))
+        //             {
+        //                 appDataBaseSave();
+        //                 lilygoLightAdd(device->u64IeeeAddr);
+        //             }
+        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
+        //                               "LILYGO.Sensor",
+        //                               strlen("LILYGO.Sensor")))
+        //             {
+        //                 appDataBaseSave();
+        //                 lilygoSensorAdd(device->u64IeeeAddr);
+        //             }
+        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
+        //                               "ESP32C6.Light",
+        //                               strlen("ESP32C6.Light")))
+        //             {
+        //                 appDataBaseSave();
+        //                 espressifLightAdd(device->u64IeeeAddr);
+        //                 // The configure method below is needed to make the device reports on/off state changes
+        //                 // when the device is controlled manually through the button on it.
+        //                 zbhci_BindingReq(
+        //                     device->u64IeeeAddr,
+        //                     1,
+        //                     0x0006,
+        //                     0x03,
+        //                     (ts_DstAddr){
+        //                         .u64DstAddr = brigeNode.macAddr},
+        //                     1);
+        //             }
+        //         }
+        //     }
+        //     break;
 
-    // case 0x0400: /* Illuminance Measurement Cluster */
-    // {
-    //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-    //     {
-    //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-    //         {
-    //             device->deviceData.rtcgq11lm.u16Illuminance = payload->asAttrList[i].uAttrData.u16AttrData;
-    //             if (!strncmp((const char *)device->au8ModelId,
-    //                          "lumi.sensor_motion.aq2",
-    //                          strlen("lumi.sensor_motion.aq2")))
-    //             {
-    //                 rtcgq11lmReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.rtcgq11lm.u8Occupancy,
-    //                     device->deviceData.rtcgq11lm.u16Illuminance);
-    //             }
-    //         }
-    //     }
-    // }
-    // break;
+        // case 0x0400: /* Illuminance Measurement Cluster */
+        // {
+        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
+        //     {
+        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
+        //         {
+        //             device->deviceData.rtcgq11lm.u16Illuminance = payload->asAttrList[i].uAttrData.u16AttrData;
+        //             if (!strncmp((const char *)device->au8ModelId,
+        //                          "lumi.sensor_motion.aq2",
+        //                          strlen("lumi.sensor_motion.aq2")))
+        //             {
+        //                 rtcgq11lmReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.rtcgq11lm.u8Occupancy,
+        //                     device->deviceData.rtcgq11lm.u16Illuminance);
+        //             }
+        //         }
+        //     }
+        // }
+        // break;
 
-    // case 0x0402: /* Temperature Measurement Cluster */
-    // {
-    //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-    //     {
-    //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-    //         {
-    //             device->deviceData.wsdcgq11lm.i16Temperature = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
-    //             if (!strncmp((const char *)device->au8ModelId,
-    //                          "lumi.weather",
-    //                          strlen("lumi.weather")))
-    //             {
-    //                 wsdcgq11lmReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.wsdcgq11lm.i16Temperature,
-    //                     device->deviceData.wsdcgq11lm.i16Humidity,
-    //                     device->deviceData.wsdcgq11lm.i16Pressure);
-    //             }
-    //             else if (!strncmp((const char *)device->au8ModelId,
-    //                               "LILYGO.Sensor",
-    //                               strlen("LILYGO.Sensor")))
-    //             {
-    //                 lilygoSensorReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.sensor.i16Temperature,
-    //                     device->deviceData.sensor.i16Humidity);
-    //             }
-    //         }
-    //     }
-    // }
-    // break;
+        // case 0x0402: /* Temperature Measurement Cluster */
+        // {
+        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
+        //     {
+        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
+        //         {
+        //             device->deviceData.wsdcgq11lm.i16Temperature = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
+        //             if (!strncmp((const char *)device->au8ModelId,
+        //                          "lumi.weather",
+        //                          strlen("lumi.weather")))
+        //             {
+        //                 wsdcgq11lmReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.wsdcgq11lm.i16Temperature,
+        //                     device->deviceData.wsdcgq11lm.i16Humidity,
+        //                     device->deviceData.wsdcgq11lm.i16Pressure);
+        //             }
+        //             else if (!strncmp((const char *)device->au8ModelId,
+        //                               "LILYGO.Sensor",
+        //                               strlen("LILYGO.Sensor")))
+        //             {
+        //                 lilygoSensorReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.sensor.i16Temperature,
+        //                     device->deviceData.sensor.i16Humidity);
+        //             }
+        //         }
+        //     }
+        // }
+        // break;
 
-    // case 0x0403: /* Pressure Measurement Cluster */
-    // {
-    //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-    //     {
-    //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-    //         {
-    //             device->deviceData.wsdcgq11lm.i16Pressure = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
-    //             if (!strncmp((const char *)device->au8ModelId,
-    //                          "lumi.weather",
-    //                          strlen("lumi.weather")))
-    //             {
-    //                 wsdcgq11lmReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.wsdcgq11lm.i16Temperature,
-    //                     device->deviceData.wsdcgq11lm.i16Humidity,
-    //                     device->deviceData.wsdcgq11lm.i16Pressure);
-    //             }
-    //         }
-    //     }
-    // }
-    // break;
+        // case 0x0403: /* Pressure Measurement Cluster */
+        // {
+        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
+        //     {
+        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
+        //         {
+        //             device->deviceData.wsdcgq11lm.i16Pressure = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
+        //             if (!strncmp((const char *)device->au8ModelId,
+        //                          "lumi.weather",
+        //                          strlen("lumi.weather")))
+        //             {
+        //                 wsdcgq11lmReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.wsdcgq11lm.i16Temperature,
+        //                     device->deviceData.wsdcgq11lm.i16Humidity,
+        //                     device->deviceData.wsdcgq11lm.i16Pressure);
+        //             }
+        //         }
+        //     }
+        // }
+        // break;
 
-    // case 0x0406: /* Occupancy Sensing Cluster */
-    // {
-    //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-    //     {
-    //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-    //         {
-    //             device->deviceData.rtcgq11lm.u8Occupancy = payload->asAttrList[i].uAttrData.u8AttrData;
-    //             if (!strncmp((const char *)device->au8ModelId,
-    //                          "lumi.sensor_motion.aq2",
-    //                          strlen("lumi.sensor_motion.aq2")))
-    //             {
-    //                 rtcgq11lmReport(
-    //                     device->u64IeeeAddr,
-    //                     device->deviceData.rtcgq11lm.u8Occupancy,
-    //                     device->deviceData.rtcgq11lm.u16Illuminance);
-    //             }
-    //         }
-    //     }
-    // }
-    // break;
+        // case 0x0406: /* Occupancy Sensing Cluster */
+        // {
+        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
+        //     {
+        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
+        //         {
+        //             device->deviceData.rtcgq11lm.u8Occupancy = payload->asAttrList[i].uAttrData.u8AttrData;
+        //             if (!strncmp((const char *)device->au8ModelId,
+        //                          "lumi.sensor_motion.aq2",
+        //                          strlen("lumi.sensor_motion.aq2")))
+        //             {
+        //                 rtcgq11lmReport(
+        //                     device->u64IeeeAddr,
+        //                     device->deviceData.rtcgq11lm.u8Occupancy,
+        //                     device->deviceData.rtcgq11lm.u16Illuminance);
+        //             }
+        //         }
+        //     }
+        // }
+        // break;
 
     default:
         break;
