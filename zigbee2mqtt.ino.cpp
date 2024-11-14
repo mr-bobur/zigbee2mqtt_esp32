@@ -1,10 +1,13 @@
+# 1 "C:\\Users\\USER\\AppData\\Local\\Temp\\tmptil1oes4"
+#include <Arduino.h>
+# 1 "C:/Users/USER/Documents/PlatformIO/Projects/zigbee2mqtt/zigbee2mqtt.ino"
 
 #include "WiFi.h"
 #include <OneButton.h>
 
 #include <stdio.h>
 #include <stdbool.h>
-// #include <string.h>
+
 
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -27,13 +30,13 @@
 #include "ArduinoJson.h"
 #include <cJSON.h>
 
-// #include "app_mqtt.h"
+
 #include "zbhci.h"
 #include "app_db.h"
 #include "device.h"
 #include "web.h"
 
-// #include <WiFiClientSecure.h>
+
 #include <Arduino_MQTT_Client.h>
 #include <ThingsBoard.h>
 #include <Server_Side_RPC.h>
@@ -58,8 +61,25 @@ Arduino_MQTT_Client mqttClient(espClient);
 ThingsBoard tb(mqttClient, MAX_MESSAGE_SIZE, Default_Max_Stack_Size, apis);
 
 bool subscribed = false;
+void InitWiFi();
+bool reconnect();
+void processSwitchChange(const JsonVariantConst &data, JsonDocument &response);
+void setup();
+void loop();
+void tbTask(void *pvParameters);
+void zbhciTask(void *pvParameters);
+void handleClick(void);
+void handleDoubleClick(void);
+void appHandleNetworkStateRsp(ts_MsgNetworkStateRspPayload *payload);
+void appLoadDateBase(void);
+void appHandleDeviceAnnouncementIndication(ts_MsgNodesDevAnnceRspPayload *payload);
+void appHandleLeaveIndication(ts_MsgLeaveIndicationPayload *payload);
+void appHandleZCLreportMsgRcv(ts_MsgZclReportMsgRcvPayload *payload);
+void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload);
+static void appHandlrMqttPermitJoin(const char *topic, const char *data);
+#line 61 "C:/Users/USER/Documents/PlatformIO/Projects/zigbee2mqtt/zigbee2mqtt.ino"
 void InitWiFi()
-{   
+{
      uint8_t mac[6];
     char ssid[32];
     Serial.println("Connecting to AP ...");
@@ -99,27 +119,27 @@ void processSwitchChange(const JsonVariantConst &data, JsonDocument &response)
 {
     Serial.println("Received the set switch method");
     const bool switch_state = data;
-    //   serializeJsonPretty(data, Serial);
-    //   Serial.print("Example switch state: ");
-    //   Serial.println(switch_state);
 
-    // Relayni holatini o'zgartiramiz
+
+
+
+
 
     sDstAddr.u16DstAddr = 8831;
     if (switch_state)
     {
-        digitalWrite(3, LOW); // Relayni yoqish
+        digitalWrite(3, LOW);
         Serial.println("Relay ON");
         zbhci_ZclOnoffOn(0x02, sDstAddr, 1, 1);
     }
     else
     {
-        digitalWrite(3, HIGH); // Relayni o'chirish
+        digitalWrite(3, HIGH);
         Serial.println("Relay OFF");
         zbhci_ZclOnoffOff(0x02, sDstAddr, 1, 1);
     }
 
-    response.set(switch_state); // Yuborilgan holatni qayta jo'natamiz
+    response.set(switch_state);
 }
 
 #define CONFIG_USR_BUTTON_PIN 2
@@ -137,21 +157,21 @@ uint32_t mqttPort = 0;
 String mqttUsername = "";
 String mqttPassword = "";
 
-DynamicJsonDocument bridge_json(1024);      // adjust size as needed
-DynamicJsonDocument devices_json(4096);     // adjust size as needed
-DynamicJsonDocument sub_devices_json(1024); // adjust size as needed
+DynamicJsonDocument bridge_json(1024);
+DynamicJsonDocument devices_json(4096);
+DynamicJsonDocument sub_devices_json(1024);
 DeviceNode device_node[50];
 int device_count = 0;
 
 JsonObject root;
 JsonArray devicesArray;
 
-// MQTTClient mqtt;
+
 
 OneButton btn = OneButton(
-    CONFIG_USR_BUTTON_PIN, /** Input pin for the button */
-    true,                  /** Button is active LOW */
-    false                  /** Enable internal pull-up resistor */
+    CONFIG_USR_BUTTON_PIN,
+    true,
+    false
 );
 
 String fileaddress = "/device2.json";
@@ -193,30 +213,10 @@ void setup()
     ESP_ERROR_CHECK(ret);
 
     appLoadDateBase();
-
-   
-
-    // esp_err_t err = nvs_flash_erase();
-    // if (err != ESP_OK)
-    // {
-    //     printf("Error erasing NVS partition: %s\n", esp_err_to_name(err));
-    //     return;
-    // }
-
-    // err = nvs_flash_init();
-    // if (err != ESP_OK)
-    // {
-    //     printf("Error initializing NVS partition: %s\n", esp_err_to_name(err));
-    //     return;
-    // }
-
-    // printf("NVS partition erased and reinitialized.\n");
-
-    // appDataBaseInit();
-
+# 217 "C:/Users/USER/Documents/PlatformIO/Projects/zigbee2mqtt/zigbee2mqtt.ino"
     msg_queue = xQueueCreate(10, sizeof(ts_HciMsg));
 
-    // Power on the zigbee chip:
+
     pinMode(0, OUTPUT);
     digitalWrite(0, HIGH);
 
@@ -238,22 +238,15 @@ void setup()
     btn.attachClick(handleClick);
     btn.attachDoubleClick(handleDoubleClick);
 
-    // connecting thingsboard with fiwi and mqtt
-    // Connect to ThingsBoard
+
+
     InitWiFi();
 
-     // will be used later!!!!!!!!!!!!!!!!!!!!!
+
     webInit();
 
     tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT);
-    // xTaskCreatePinnedToCore(
-    //     tbTask,
-    //     "tbTask",
-    //     4096,
-    //     NULL,
-    //     5,
-    //     NULL,
-    //     ARDUINO_RUNNING_CORE);
+# 257 "C:/Users/USER/Documents/PlatformIO/Projects/zigbee2mqtt/zigbee2mqtt.ino"
 }
 int adres1 = 0;
 void loop()
@@ -294,12 +287,12 @@ void loop()
 
     tb.loop();
 
-    // sDstAddr.u16DstAddr = 45138;
-    // zbhci_ZclOnoffToggle(0x02, sDstAddr, 1, 1);
 
-    // delay(2000);
-    // zbhci_ZclOnoffOff(0x02, sDstAddr, 1, 1);
-    // delay(5000);
+
+
+
+
+
 }
 void tbTask(void *pvParameters)
 {
@@ -336,7 +329,7 @@ void zbhciTask(void *pvParameters)
                 break;
 
             case ZBHCI_CMD_ZCL_ATTR_READ_RSP:
-                // appHandleZCLReadResponse(&sHciMsg.uPayload.sZclAttrReadRspPayload);
+
                 break;
 
             default:
@@ -350,12 +343,12 @@ void zbhciTask(void *pvParameters)
 
 void handleClick(void)
 {
-    // digitalWrite(CONFIG_BLUE_LIGHT_PIN, LOW);
+
     zbhci_MgmtPermitJoinReq(0xFFFC, 0x00, 1);
 }
 void handleDoubleClick(void)
 {
-    // digitalWrite(CONFIG_BLUE_LIGHT_PIN, HIGH);
+
     zbhci_MgmtPermitJoinReq(0xFFFC, 0xFF, 1);
 }
 void appHandleNetworkStateRsp(ts_MsgNetworkStateRspPayload *payload)
@@ -408,10 +401,10 @@ void appHandleDeviceAnnouncementIndication(ts_MsgNodesDevAnnceRspPayload *payloa
     device->u64IeeeAddr = payload->u64IEEEAddr;
     device->u8Type = payload->u8Capability;
 
-    // device_node
-    // Create devices array
 
-    // Add data for each device
+
+
+
     bool saved = true;
     Serial.print("Array size:");
     Serial.println(devicesArray.size());
@@ -470,53 +463,12 @@ void appHandleLeaveIndication(ts_MsgLeaveIndicationPayload *payload)
             file.close();
         }
     }
-
-    // device = findDeviceByIeeeaddr(payload->u64MacAddr);
-    // if (device == NULL)
-    // {
-    //     return;
-    // }
-
-    // if (!payload->u8Rejoin)
-    // {
-    //     if (!strncmp((const char *)device->au8ModelId,
-    //                  "lumi.sensor_motion.aq2",
-    //                  strlen("lumi.sensor_motion.aq2")))
-    //     {
-    //         rtcgq11lmDelete(device->u64IeeeAddr);
-    //     }
-    //     else if (!strncmp((const char *)device->au8ModelId,
-    //                       "lumi.weather",
-    //                       strlen("lumi.weather")))
-    //     {
-    //         wsdcgq11lmDelete(device->u64IeeeAddr);
-    //     }
-    //     else if (!strncmp((const char *)device->au8ModelId,
-    //                       "LILYGO.Light",
-    //                       strlen("LILYGO.Light")))
-    //     {
-    //         lilygoLightDelete(device->u64IeeeAddr);
-    //     }
-    //     else if (!strncmp((const char *)device->au8ModelId,
-    //                       "LILYGO.Sensor",
-    //                       strlen("LILYGO.Sensor")))
-    //     {
-    //         lilygoSensorDelete(device->u64IeeeAddr);
-    //     }
-    //     else if (!strncmp((const char *)device->au8ModelId,
-    //                       "ESP32C6.Light",
-    //                       strlen("ESP32C6.Light")))
-    //     {
-    //         espressifLightDelete(device->u64IeeeAddr);
-    //     }
-    //     memset(device, 0, sizeof(DeviceNode));
-    //     appDataBaseSave();
-    // }
+# 515 "C:/Users/USER/Documents/PlatformIO/Projects/zigbee2mqtt/zigbee2mqtt.ino"
 }
 
 void appHandleZCLreportMsgRcv(ts_MsgZclReportMsgRcvPayload *payload)
 {
-    // payload->
+
 
     DeviceNode *device = NULL;
 
@@ -546,192 +498,7 @@ void appHandleZCLreportMsgRcv(ts_MsgZclReportMsgRcvPayload *payload)
         }
     }
     break;
-
-        // case 0x405: /* Relative Humidity Measurement Cluster */
-        // {
-
-        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-        //     {
-        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-        //         {
-        //             device->deviceData.wsdcgq11lm.i16Humidity = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
-        //             if (!strncmp((const char *)device->au8ModelId,
-        //                          "lumi.weather",
-        //                          strlen("lumi.weather")))
-        //             {
-        //                 wsdcgq11lmReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.wsdcgq11lm.i16Temperature,
-        //                     device->deviceData.wsdcgq11lm.i16Humidity,
-        //                     device->deviceData.wsdcgq11lm.i16Pressure);
-        //             }
-        //             else if (!strncmp((const char *)device->au8ModelId,
-        //                               "LILYGO.Sensor",
-        //                               strlen("LILYGO.Sensor")))
-        //             {
-        //                 lilygoSensorReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.sensor.i16Temperature,
-        //                     device->deviceData.sensor.i16Humidity);
-        //             }
-        //         }
-        //     }
-        // }
-        // break;
-
-        // case 0: /* Basic Cluster */
-        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-        //     {
-        //         if (payload->asAttrList[i].u16AttrID == 0x0005)
-        //         {
-        //             memcpy(
-        //                 device->au8ModelId,
-        //                 payload->asAttrList[i].uAttrData.au8AttrData,
-        //                 payload->asAttrList[i].u16DataLen);
-        //             if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-        //                          "lumi.sensor_motion.aq2",
-        //                          strlen("lumi.sensor_motion.aq2")))
-        //             {
-        //                 appDataBaseSave();
-        //                 rtcgq11lmAdd(device->u64IeeeAddr);
-        //             }
-        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-        //                               "lumi.weather",
-        //                               strlen("lumi.weather")))
-        //             {
-        //                 appDataBaseSave();
-        //                 wsdcgq11lmAdd(device->u64IeeeAddr);
-        //             }
-        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-        //                               "LILYGO.Light",
-        //                               strlen("LILYGO.Light")))
-        //             {
-        //                 appDataBaseSave();
-        //                 lilygoLightAdd(device->u64IeeeAddr);
-        //             }
-        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-        //                               "LILYGO.Sensor",
-        //                               strlen("LILYGO.Sensor")))
-        //             {
-        //                 appDataBaseSave();
-        //                 lilygoSensorAdd(device->u64IeeeAddr);
-        //             }
-        //             else if (!strncmp((const char *)payload->asAttrList[i].uAttrData.au8AttrData,
-        //                               "ESP32C6.Light",
-        //                               strlen("ESP32C6.Light")))
-        //             {
-        //                 appDataBaseSave();
-        //                 espressifLightAdd(device->u64IeeeAddr);
-        //                 // The configure method below is needed to make the device reports on/off state changes
-        //                 // when the device is controlled manually through the button on it.
-        //                 zbhci_BindingReq(
-        //                     device->u64IeeeAddr,
-        //                     1,
-        //                     0x0006,
-        //                     0x03,
-        //                     (ts_DstAddr){
-        //                         .u64DstAddr = brigeNode.macAddr},
-        //                     1);
-        //             }
-        //         }
-        //     }
-        //     break;
-
-        // case 0x0400: /* Illuminance Measurement Cluster */
-        // {
-        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-        //     {
-        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-        //         {
-        //             device->deviceData.rtcgq11lm.u16Illuminance = payload->asAttrList[i].uAttrData.u16AttrData;
-        //             if (!strncmp((const char *)device->au8ModelId,
-        //                          "lumi.sensor_motion.aq2",
-        //                          strlen("lumi.sensor_motion.aq2")))
-        //             {
-        //                 rtcgq11lmReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.rtcgq11lm.u8Occupancy,
-        //                     device->deviceData.rtcgq11lm.u16Illuminance);
-        //             }
-        //         }
-        //     }
-        // }
-        // break;
-
-        // case 0x0402: /* Temperature Measurement Cluster */
-        // {
-        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-        //     {
-        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-        //         {
-        //             device->deviceData.wsdcgq11lm.i16Temperature = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
-        //             if (!strncmp((const char *)device->au8ModelId,
-        //                          "lumi.weather",
-        //                          strlen("lumi.weather")))
-        //             {
-        //                 wsdcgq11lmReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.wsdcgq11lm.i16Temperature,
-        //                     device->deviceData.wsdcgq11lm.i16Humidity,
-        //                     device->deviceData.wsdcgq11lm.i16Pressure);
-        //             }
-        //             else if (!strncmp((const char *)device->au8ModelId,
-        //                               "LILYGO.Sensor",
-        //                               strlen("LILYGO.Sensor")))
-        //             {
-        //                 lilygoSensorReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.sensor.i16Temperature,
-        //                     device->deviceData.sensor.i16Humidity);
-        //             }
-        //         }
-        //     }
-        // }
-        // break;
-
-        // case 0x0403: /* Pressure Measurement Cluster */
-        // {
-        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-        //     {
-        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-        //         {
-        //             device->deviceData.wsdcgq11lm.i16Pressure = (int16_t)payload->asAttrList[i].uAttrData.u16AttrData;
-        //             if (!strncmp((const char *)device->au8ModelId,
-        //                          "lumi.weather",
-        //                          strlen("lumi.weather")))
-        //             {
-        //                 wsdcgq11lmReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.wsdcgq11lm.i16Temperature,
-        //                     device->deviceData.wsdcgq11lm.i16Humidity,
-        //                     device->deviceData.wsdcgq11lm.i16Pressure);
-        //             }
-        //         }
-        //     }
-        // }
-        // break;
-
-        // case 0x0406: /* Occupancy Sensing Cluster */
-        // {
-        //     for (size_t i = 0; i < payload->u8AttrNum; i++)
-        //     {
-        //         if (payload->asAttrList[i].u16AttrID == 0x0000)
-        //         {
-        //             device->deviceData.rtcgq11lm.u8Occupancy = payload->asAttrList[i].uAttrData.u8AttrData;
-        //             if (!strncmp((const char *)device->au8ModelId,
-        //                          "lumi.sensor_motion.aq2",
-        //                          strlen("lumi.sensor_motion.aq2")))
-        //             {
-        //                 rtcgq11lmReport(
-        //                     device->u64IeeeAddr,
-        //                     device->deviceData.rtcgq11lm.u8Occupancy,
-        //                     device->deviceData.rtcgq11lm.u16Illuminance);
-        //             }
-        //         }
-        //     }
-        // }
-        // break;
-
+# 735 "C:/Users/USER/Documents/PlatformIO/Projects/zigbee2mqtt/zigbee2mqtt.ino"
     default:
         break;
     }
@@ -747,7 +514,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     switch (payload->u16ClusterId)
     {
-    case 0x0000: /* Basic Cluster */
+    case 0x0000:
         for (size_t i = 0; i < payload->u8AttrNum; i++)
         {
             if (payload->asAttrReadList[i].u16AttrID == 0x0005)
@@ -791,8 +558,8 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
                 {
                     appDataBaseSave();
                     espressifLightAdd(device->u64IeeeAddr);
-                    // The configure method below is needed to make the device reports on/off state changes
-                    // when the device is controlled manually through the button on it.
+
+
                     zbhci_BindingReq(
                         device->u64IeeeAddr,
                         1,
@@ -825,7 +592,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     break;
 
-    case 0x0400: /* Illuminance Measurement Cluster */
+    case 0x0400:
     {
         for (size_t i = 0; i < payload->u8AttrNum; i++)
         {
@@ -846,7 +613,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     break;
 
-    case 0x0402: /* Temperature Measurement Cluster */
+    case 0x0402:
     {
         for (size_t i = 0; i < payload->u8AttrNum; i++)
         {
@@ -877,7 +644,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     break;
 
-    case 0x0403: /* Pressure Measurement Cluster */
+    case 0x0403:
     {
         for (size_t i = 0; i < payload->u8AttrNum; i++)
         {
@@ -899,7 +666,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     break;
 
-    case 0x8104: /* Pressure Measurement Cluster */
+    case 0x8104:
     {
         Serial.println("keldi");
         for (size_t i = 0; i < payload->u8AttrNum; i++)
@@ -922,7 +689,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     break;
 
-    case 0x0405: /* Relative Humidity Measurement Cluster */
+    case 0x0405:
     {
         for (size_t i = 0; i < payload->u8AttrNum; i++)
         {
@@ -953,7 +720,7 @@ void appHandleZCLReadResponse(ts_MsgZclAttrReadRspPayload *payload)
     }
     break;
 
-    case 0x0406: /* Occupancy Sensing Cluster */
+    case 0x0406:
     {
         for (size_t i = 0; i < payload->u8AttrNum; i++)
         {
