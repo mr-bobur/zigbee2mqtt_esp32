@@ -1,0 +1,15 @@
+{
+    "sta": {
+        "ssid": "Tenda",
+        "pwd": "lockbaby"
+    },
+    "zigbee": {
+        "channel": 25
+    },
+    "mqtt": {
+        "server": "broker.emqx.io",
+        "port": 1883,
+        "username": "test1",
+        "password": "123456"
+    }
+}
